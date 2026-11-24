@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mission Control - Autonomous Agent Command Bridge</title>
+  <style>
+    :root {
+      --bg: #090b10;
+      --panel-bg: rgba(13, 17, 27, 0.88);
+      --border: rgba(56, 189, 248, 0.25);
+      --border-glow: rgba(56, 189, 248, 0.5);
+      --primary: #38bdf8;
+      --accent: #818cf8;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", monospace;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: var(--panel-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      backdrop-filter: blur(12px);
+      z-index: 10;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--primary);
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      background: rgba(52, 211, 153, 0.15);
+      border: 1px solid rgba(52, 211, 153, 0.4);
+      color: var(--success);
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+      animation: pulse 1.8s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn:hover {
+      background: rgba(56, 189, 248, 0.18);
+      border-color: var(--primary);
+      color: #fff;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+    }
+    .btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #04111f;
+      font-weight: 700;
+    }
+    #stage-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: radial-gradient(circle at 50% 50%, #0e1526 0%, #06080e 100%);
+    }
+    canvas#stage {
+      display: block;
+      image-rendering: pixelated;
+      cursor: crosshair;
+    }
+    /* Side Inspector Drawer */
+    #inspector {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 320px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      backdrop-filter: blur(16px);
+      padding: 16px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+      z-index: 20;
+    }
+    #inspector.hidden {
+      transform: translateX(360px);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .hud-title {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--primary);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .hud-label { color: var(--text-muted); }
+    .hud-val { font-weight: 600; font-family: monospace; }
+    /* Bottom Simulation Action Bar */
+    footer {
+      background: var(--panel-bg);
+      border-top: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      backdrop-filter: blur(12px);
+      z-index: 10;
+    }
+    .event-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .live-kpi {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      font-family: monospace;
+      color: var(--text-muted);
+    }
+    .kpi-item span {
+      color: var(--primary);
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+        <polyline points="2 17 12 22 22 17"></polyline>
+        <polyline points="2 12 12 17 22 12"></polyline>
+      </svg>
+      Mission Control
+      <div class="status-pill">
+        <span class="pulse-dot"></span>
+        <span id="sys-status">BRIDGE ONLINE</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <span style="font-size: 11px; color: var(--text-muted); margin-right: 4px;">SPEED:</span>
+      <button class="btn active" id="spd-1x" onclick="setSpeed(1)">1x</button>
+      <button class="btn" id="spd-2x" onclick="setSpeed(2)">2x</button>
+      <button class="btn" id="spd-max" onclick="setSpeed(4)">MAX</button>
+      <div style="width: 1px; height: 18px; background: var(--border); margin: 0 4px;"></div>
+      <button class="btn" id="sound-btn" onclick="toggleAudio()">
+        <span id="sound-icon">🔊</span> AUDIO: ON
+      </button>
+    </div>
+  </header>
+
+  <div id="stage-container">
+    <canvas id="stage" width="1024" height="576"></canvas>
+
+    <!-- Side Inspector Drawer -->
+    <div id="inspector">
+      <div class="hud-title">
+        <span id="hud-station-name">Station Telemetry</span>
+        <span style="cursor: pointer; opacity: 0.7;" onclick="closeInspector()">✕</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">Specialist:</span>
+        <span class="hud-val" id="hud-agent-name" style="color: var(--primary);">Zorya</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">Role:</span>
+        <span class="hud-val" id="hud-role">Mission Strategist</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">Status:</span>
+        <span class="hud-val" id="hud-state" style="color: var(--success);">ACTIVE EXECUTION</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">Tool / Payload:</span>
+        <span class="hud-val" id="hud-tool" style="color: var(--warning); font-size: 11px;">compile_bundle()</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">Throughput:</span>
+        <span class="hud-val" id="hud-tokens">14,290 tok / 42 tps</span>
+      </div>
+      <div class="hud-row">
+        <span class="hud-label">Cycle Time:</span>
+        <span class="hud-val" id="hud-latency">128ms</span>
+      </div>
+      <div style="margin-top: 12px; display: flex; gap: 6px;">
+        <button class="btn" style="flex: 1;" onclick="triggerStationWork()">Trigger Task</button>
+        <button class="btn" style="flex: 1;" onclick="triggerStationCheer()">Celebrate</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="event-bar">
+      <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); margin-right: 6px;">SIMULATE LIVE AGENT EVENTS:</span>
+      <button class="btn" onclick="simEvent('plan')">⚡ Plan & Prompt</button>
+      <button class="btn" onclick="simEvent('tool')">🔨 Tool Burst</button>
+      <button class="btn" onclick="simEvent('test')">🧪 Run QA Suite</button>
+      <button class="btn" onclick="simEvent('needsYou')">⚠️ Approval Needed</button>
+      <button class="btn" onclick="simEvent('ship')">🚀 Ship Release!</button>
+    </div>
+    <div class="live-kpi">
+      <div class="kpi-item">FRAME RATE: <span id="fps-counter">60</span> FPS</div>
+      <div class="kpi-item">BURST BUFFER: <span id="buffer-counter">0</span> queued</div>
+      <div class="kpi-item">DATA PULSES: <span id="pulses-counter">0</span></div>
+    </div>
+  </footer>
+
+  <script>
+    /* =========================================================================
+       Next-Gen Mission Control: 60 FPS Canvas Engine & Choreography
+       Created for John Schettini (johnschettini-ship-it)
+       ========================================================================= */
+
+    const canvas = document.getElementById('stage');
+    const ctx = canvas.getContext('2d');
+    let speed = 1;
+    let audioEnabled = true;
+    let audioCtx = null;
+    let selectedStation = null;
+
+    // Responsive Canvas Resizing while preserving virtual resolution
+    function resizeCanvas() {
+      const container = document.getElementById('stage-container');
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      const scale = Math.min(w / 1024, h / 576);
+      canvas.style.width = `${Math.floor(1024 * scale)}px`;
+      canvas.style.height = `${Math.floor(576 * scale)}px`;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // ================= Procedural Web Audio Synth =================
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+    }
+    function playBeep(freq = 600, duration = 0.08, type = 'sine') {
+      if (!audioEnabled) return;
+      initAudio();
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {}
+    }
+    function playFanfare() {
+      if (!audioEnabled) return;
+      const notes = [523.25, 659.25, 783.99, 1046.50];
+      notes.forEach((n, idx) => {
+        setTimeout(() => playBeep(n, 0.22, 'triangle'), idx * 90);
+      });
+    }
+    function toggleAudio() {
+      audioEnabled = !audioEnabled;
+      document.getElementById('sound-icon').textContent = audioEnabled ? '🔊' : '🔇';
+      document.getElementById('sound-btn').innerHTML = `<span id="sound-icon">${audioEnabled ? '🔊' : '🔇'}</span> AUDIO: ${audioEnabled ? 'ON' : 'OFF'}`;
+      if (audioEnabled) playBeep(880, 0.1);
+    }
+
+    // ================= Mission Control Stations & Crew =================
+    const STATIONS = [
+      {
+        id: 'strategy',
+        name: 'War Room / Strategy',
+        role: 'Planning & Prompts',
+        agent: 'Zorya',
+        title: 'Mission Strategist',
+        color: '#38bdf8',
+        x: 140,
+        y: 280,
+        width: 160,
+        height: 120,
+        glow: 0,
+        activity: 'Idle / Monitoring',
+        tokens: '4,120 tok'
+      },
+      {
+        id: 'engine',
+        name: 'Dev Lab / Core Engine',
+        role: 'Code Gen & Refactoring',
+        agent: 'Brix',
+        title: 'Lead Architect',
+        color: '#818cf8',
+        x: 390,
+        y: 260,
+        width: 170,
+        height: 140,
+        glow: 0,
+        activity: 'Standing By',
+        tokens: '18,940 tok'
+      },
+      {
+        id: 'qa',
+        name: 'Diagnostic & QA Chamber',
+        role: 'Tests, Diffs & Evals',
+        agent: 'Quinn',
+        title: 'QA Specialist',
+        color: '#34d399',
+        x: 640,
+        y: 270,
+        width: 160,
+        height: 130,
+        glow: 0,
+        activity: 'Suite Passing',
+        tokens: '9,340 tok'
+      },
+      {
+        id: 'ops',
+        name: 'Launch Ops & Ship Bay',
+        role: 'Deploy, Reviews & Ship',
+        agent: 'Nova',
+        title: 'Launch Director',
+        color: '#fbbf24',
+        x: 870,
+        y: 280,
+        width: 130,
+        height: 120,
+        glow: 0,
+        activity: 'Standby / Deploy',
+        tokens: '2,800 tok'
+      }
+    ];
+
+    // Data Pulses (High speed quantum conduit)
+    const pulses = [];
+    // Particle System (Stars, sparks, ship confetti)
+    const particles = [];
+    const stars = Array.from({ length: 90 }, () => ({
+      x: Math.random() * 1024,
+      y: Math.random() * 576,
+      speed: 0.15 + Math.random() * 0.45,
+      size: Math.random() > 0.8 ? 2 : 1,
+      alpha: 0.3 + Math.random() * 0.7
+    }));
+
+    // Data Conduit Links between stations
+    function sendDataPulse(fromStationId, toStationId, type = 'data') {
+      const from = STATIONS.find(s => s.id === fromStationId);
+      const to = STATIONS.find(s => s.id === toStationId);
+      if (!from || !to) return;
+      pulses.push({
+        x: from.x,
+        y: from.y - 10,
+        tx: to.x,
+        ty: to.y - 10,
+        prog: 0,
+        speed: 0.025 * speed,
+        color: from.color,
+        type: type
+      });
+      playBeep(type === 'tool' ? 720 : 540, 0.04);
+      document.getElementById('pulses-counter').textContent = pulses.length;
+    }
+
+    function createSparks(x, y, color = '#38bdf8', count = 12) {
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speedVal = 1 + Math.random() * 3.5;
+        particles.push({
+          x, y,
+          vx: Math.cos(angle) * speedVal,
+          vy: Math.sin(angle) * speedVal,
+          alpha: 1,
+          decay: 0.02 + Math.random() * 0.03,
+          color,
+          size: 1 + Math.random() * 2.5
+        });
+      }
+    }
+
+    // ================= Simulation Events =================
+    function simEvent(type) {
+      if (type === 'plan') {
+        STATIONS[0].glow = 1.0;
+        STATIONS[0].activity = 'Formulating Plan Decomposition';
+        playBeep(640, 0.1);
+        setTimeout(() => sendDataPulse('strategy', 'engine', 'tool'), 350);
+      } else if (type === 'tool') {
+        STATIONS[1].glow = 1.0;
+        STATIONS[1].activity = 'Executing 6 parallel tool calls';
+        createSparks(STATIONS[1].x, STATIONS[1].y, STATIONS[1].color, 16);
+        sendDataPulse('engine', 'qa', 'tool');
+        sendDataPulse('engine', 'strategy', 'data');
+      } else if (type === 'test') {
+        STATIONS[2].glow = 1.0;
+        STATIONS[2].activity = 'Running 128 tests (100% pass)';
+        createSparks(STATIONS[2].x, STATIONS[2].y, STATIONS[2].color, 20);
+        sendDataPulse('qa', 'ops', 'data');
+      } else if (type === 'needsYou') {
+        STATIONS[3].glow = 1.0;
+        STATIONS[3].color = '#f87171';
+        STATIONS[3].activity = 'Awaiting User Permission';
+        playBeep(880, 0.2, 'sawtooth');
+        setTimeout(() => playBeep(880, 0.2, 'sawtooth'), 180);
+      } else if (type === 'ship') {
+        STATIONS.forEach(s => s.glow = 1.0);
+        playFanfare();
+        // Confetti explosion
+        for (let i = 0; i < 90; i++) {
+          particles.push({
+            x: 870 + (Math.random() - 0.5) * 60,
+            y: 280,
+            vx: (Math.random() - 0.5) * 8,
+            vy: -4 - Math.random() * 6,
+            alpha: 1,
+            decay: 0.009,
+            color: ['#38bdf8', '#34d399', '#fbbf24', '#f43f5e', '#a855f7'][Math.floor(Math.random() * 5)],
+            size: 3 + Math.random() * 3
+          });
+        }
+      }
+      if (selectedStation) updateInspector(selectedStation);
+    }
+
+    function setSpeed(s) {
+      speed = s;
+      document.querySelectorAll('.controls .btn').forEach(b => b.classList.remove('active'));
+      if (s === 1) document.getElementById('spd-1x').classList.add('active');
+      if (s === 2) document.getElementById('spd-2x').classList.add('active');
+      if (s === 4) document.getElementById('spd-max').classList.add('active');
+    }
+
+    // ================= Click Handling & Inspector =================
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = 1024 / rect.width;
+      const scaleY = 576 / rect.height;
+      const mouseX = (e.clientX - rect.left) * scaleX;
+      const mouseY = (e.clientY - rect.top) * scaleY;
+
+      let hit = null;
+      for (const s of STATIONS) {
+        if (Math.abs(mouseX - s.x) < s.width / 2 && Math.abs(mouseY - s.y) < s.height / 2) {
+          hit = s;
+          break;
+        }
+      }
+      if (hit) {
+        selectedStation = hit;
+        hit.glow = 1.0;
+        playBeep(920, 0.05);
+        updateInspector(hit);
+      }
+    });
+
+    function updateInspector(s) {
+      document.getElementById('inspector').classList.remove('hidden');
+      document.getElementById('hud-station-name').textContent = s.name;
+      document.getElementById('hud-agent-name').textContent = s.agent;
+      document.getElementById('hud-role').textContent = s.title;
+      document.getElementById('hud-state').textContent = s.activity;
+      document.getElementById('hud-tokens').textContent = s.tokens;
+    }
+    function closeInspector() {
+      document.getElementById('inspector').classList.add('hidden');
+      selectedStation = null;
+    }
+    function triggerStationWork() {
+      if (selectedStation) {
+        selectedStation.glow = 1.0;
+        createSparks(selectedStation.x, selectedStation.y, selectedStation.color, 14);
+        playBeep(700, 0.08);
+      }
+    }
+    function triggerStationCheer() {
+      if (selectedStation) {
+        createSparks(selectedStation.x, selectedStation.y, '#fbbf24', 24);
+        playFanfare();
+      }
+    }
+
+    // ================= Main 60 FPS Render Loop =================
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let fpsTimer = 0;
+
+    function render(now) {
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+      frameCount++;
+      fpsTimer += dt;
+      if (fpsTimer >= 0.5) {
+        document.getElementById('fps-counter').textContent = Math.round(frameCount / fpsTimer);
+        frameCount = 0;
+        fpsTimer = 0;
+      }
+
+      // 1. Clear & Background Starfield
+      ctx.fillStyle = '#06080f';
+      ctx.fillRect(0, 0, 1024, 576);
+
+      // Stars
+      ctx.fillStyle = '#ffffff';
+      for (const star of stars) {
+        star.x -= star.speed * speed;
+        if (star.x < 0) star.x = 1024;
+        ctx.globalAlpha = star.alpha;
+        ctx.fillRect(Math.floor(star.x), Math.floor(star.y), star.size, star.size);
+      }
+      ctx.globalAlpha = 1.0;
+
+      // 2. Futuristic Grid Floor & Perspective
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
+      ctx.lineWidth = 1;
+      const horizon = 320;
+      for (let y = horizon; y < 576; y += 24) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(1024, y);
+        ctx.stroke();
+      }
+      for (let x = -200; x < 1224; x += 64) {
+        ctx.beginPath();
+        ctx.moveTo(512 + (x - 512) * 0.2, horizon);
+        ctx.lineTo(x, 576);
+        ctx.stroke();
+      }
+
+      // 3. Central Quantum Data Conduit (Glowing Trunk)
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(140, 270);
+      ctx.lineTo(390, 250);
+      ctx.lineTo(640, 260);
+      ctx.lineTo(870, 270);
+      ctx.stroke();
+
+      // Glowing Data Conduit Nodes
+      [140, 390, 640, 870].forEach((nx, i) => {
+        ctx.fillStyle = STATIONS[i].color;
+        ctx.beginPath();
+        ctx.arc(nx, i === 1 ? 250 : i === 2 ? 260 : 270, 5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // 4. Update & Render Pulses
+      for (let i = pulses.length - 1; i >= 0; i--) {
+        const p = pulses[i];
+        p.prog += p.speed;
+        const curX = p.x + (p.tx - p.x) * p.prog;
+        const curY = p.y + (p.ty - p.y) * p.prog;
+
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(curX, curY, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        if (p.prog >= 1.0) {
+          createSparks(p.tx, p.ty, p.color, 8);
+          pulses.splice(i, 1);
+        }
+      }
+      document.getElementById('pulses-counter').textContent = pulses.length;
+
+      // 5. Draw Stations & Specialist Avatars
+      STATIONS.forEach((s) => {
+        // Station decay
+        if (s.glow > 0) s.glow = Math.max(0, s.glow - 0.012 * speed);
+
+        const isHovered = selectedStation && selectedStation.id === s.id;
+        const x = s.x - s.width / 2;
+        const y = s.y - s.height / 2;
+
+        // Base glow & pod shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.beginPath();
+        ctx.ellipse(s.x, s.y + 40, s.width * 0.45, 16, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Console structure
+        ctx.fillStyle = isHovered ? 'rgba(30, 41, 59, 0.95)' : 'rgba(15, 23, 42, 0.85)';
+        ctx.strokeStyle = s.glow > 0 ? s.color : isHovered ? '#38bdf8' : 'rgba(56, 189, 248, 0.3)';
+        ctx.lineWidth = isHovered || s.glow > 0 ? 2 : 1;
+        ctx.beginPath();
+        ctx.roundRect(x, y, s.width, s.height, 10);
+        ctx.fill();
+        ctx.stroke();
+
+        // Station Header
+        ctx.fillStyle = s.color;
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(s.name.toUpperCase(), x + 10, y + 20);
+
+        // Holographic Monitor Screen
+        ctx.fillStyle = 'rgba(2, 6, 23, 0.8)';
+        ctx.fillRect(x + 10, y + 28, s.width - 20, 48);
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
+        ctx.strokeRect(x + 10, y + 28, s.width - 20, 48);
+
+        // Mini Matrix / Waveform inside monitor
+        const t = now * 0.003 * speed;
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let ix = 0; ix < s.width - 24; ix += 3) {
+          const sine = Math.sin(t + ix * 0.15) * 8 * (s.glow > 0 ? 1.8 : 0.8);
+          if (ix === 0) ctx.moveTo(x + 12 + ix, y + 52 + sine);
+          else ctx.lineTo(x + 12 + ix, y + 52 + sine);
+        }
+        ctx.stroke();
+
+        // Pixel-Art Crew Avatar at Desk
+        const charX = s.x - 8;
+        const charY = y + 84;
+        const bob = Math.sin(now * 0.005 + s.x) * 2;
+
+        // Head
+        ctx.fillStyle = '#fbcfe8';
+        ctx.fillRect(charX, charY + bob, 16, 14);
+        // Hair
+        ctx.fillStyle = s.id === 'strategy' ? '#f43f5e' : s.id === 'engine' ? '#0284c7' : '#10b981';
+        ctx.fillRect(charX - 1, charY - 3 + bob, 18, 6);
+        // Uniform Body
+        ctx.fillStyle = s.color;
+        ctx.fillRect(charX - 2, charY + 14 + bob, 20, 16);
+        // Desk Name Tag
+        ctx.fillStyle = '#f1f5f9';
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText(`${s.agent} (${s.title})`, x + 10, y + s.height - 8);
+      });
+
+      // 6. Particles
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const pt = particles[i];
+        pt.x += pt.vx * speed;
+        pt.y += pt.vy * speed;
+        pt.alpha -= pt.decay * speed;
+        if (pt.alpha <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+        ctx.globalAlpha = Math.max(0, pt.alpha);
+        ctx.fillStyle = pt.color;
+        ctx.fillRect(Math.floor(pt.x), Math.floor(pt.y), pt.size, pt.size);
+      }
+      ctx.globalAlpha = 1.0;
+
+      requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>
