@@ -37,6 +37,76 @@ Unlike classic terminal-hook or software-rasterized mods, Mission Control runs d
 
 ---
 
+## 🔌 Universal Bridge Suite (Connect Any Agent)
+
+Mission Control includes a universal adapter suite that connects to **any** AI agent, terminal workflow, or framework with zero latency:
+
+```
+Mission-Control/
+├── index.html                   # 60 FPS Canvas UI (auto-connects to SSE stream)
+├── bridge.py                    # Zero-dependency local event bridge (HTTP + SSE)
+└── adapters/
+    ├── universal_mcp.py         # MCP Server for Cursor, Antigravity, Claude, Zed, Windsurf
+    ├── claude_hook.py           # Featherweight hook for Claude Code (< 2ms execution)
+    ├── antigravity_bridge.py    # Native event emitter for Antigravity & Swarms
+    ├── cli_wrapper.py           # Universal CLI runner for any terminal command
+    ├── git_hooks.py             # Auto post-commit & pre-push git hooks
+    └── agent_frameworks.py      # Callbacks for LangChain, CrewAI, AutoGen, OpenAI
+```
+
+### 1. Model Context Protocol (MCP) — For Cursor, Antigravity, Claude Desktop, Zed
+Add to your agent's MCP config:
+```json
+{
+  "mcpServers": {
+    "mission-control": {
+      "command": "python",
+      "args": ["path/to/adapters/universal_mcp.py"]
+    }
+  }
+}
+```
+
+### 2. Claude Code (< 2ms Featherweight Hook)
+Add to `.claude/settings.json`:
+```json
+{
+  "hooks": {
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "python adapters/claude_hook.py tool" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "python adapters/claude_hook.py ship" }] }]
+  }
+}
+```
+
+### 3. Google Antigravity & Swarms
+```python
+from adapters.antigravity_bridge import emit
+
+emit("tool", detail="edit_file('auth.ts')", station="engine", agent="Brix")
+```
+
+### 4. Universal CLI Wrapper (`mc-run`)
+Wrap ANY command to auto-detect tests, builds, and commits:
+```bash
+python adapters/cli_wrapper.py pytest tests/
+python adapters/cli_wrapper.py git commit -m "feat: user login"
+```
+
+### 5. Git Hooks (Automatic Commit & Push Telemetry)
+```bash
+python adapters/git_hooks.py install
+```
+Every `git commit` triggers Brix, and every `git push` triggers the Nova release fanfare!
+
+### 6. One-Line cURL (Bash, CI/CD, GitHub Actions)
+```bash
+curl -X POST http://localhost:7890/event \
+  -H "Content-Type: application/json" \
+  -d '{"type":"tool","station":"engine","agent":"Brix","detail":"CI build passed"}'
+```
+
+---
+
 ## 🚀 Live Web Demo
 
 Play with the live web deployment directly in your browser:
@@ -44,16 +114,14 @@ Play with the live web deployment directly in your browser:
 
 ---
 
-## 💻 Local / Cloud Development
+## 💻 Running the Live Bridge
 
-No build tools, Node.js, or complex dependencies required. Simply open `index.html` in any browser or launch in [GitHub Codespaces](https://github.com/codespaces).
-
-```bash
-# Clone and open
-git clone https://github.com/johnschettini-ship-it/Mission-Control.git
-cd Mission-Control
-# Open index.html in your default browser
-```
+1. Start the event bridge server:
+   ```bash
+   python bridge.py
+   ```
+2. Open `http://localhost:7890` in your browser.
+3. The bridge status turns green: **`LIVE AGENT LINKED`**.
 
 ---
 
